@@ -15,35 +15,56 @@ def get_size(start_path):
             total_size += os.path.getsize(fp)
     return total_size
 
-def execute(command):
+QUEUE_SOCKS = {"disk": "/tmp/tsp-disk.sock", "network": "/tmp/tsp-network.sock"}
+
+def execute(command, queue=None):
+    env = os.environ.copy()
+    if queue is not None:
+        if queue in QUEUE_SOCKS:
+            env["TS_SOCKET"] = QUEUE_SOCKS[queue]
+            command = [config['toolchain']['tsp'], "-n", "-f"] + command
+        else:
+            print("Warning: unknown queue option '%s' for execute(), run the task immediately." % queue)
     print("Executing:", command)
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    
+    return process.returncode
 
-    # Poll process for new output until finished
-    while True:
-        nextline = process.stdout.readline().decode(sys.stdout.encoding)
-        if nextline == '' and process.poll() is not None:
-            break
-        sys.stdout.write(nextline)
-        sys.stdout.flush()
-
-    output = process.communicate()[0]
-    exitCode = process.returncode
-
-    if (exitCode == 0):
-        return output
+def escape_name(orig_name):
+    #for OneDrive filename rules
+    res = orig_name.replace('~', "[tilde]")
+    res = res.replace('"', "[quote]")
+    res = res.replace('#', "[sharp]")
+    res = res.replace('%', "[pct]")
+    res = res.replace('&', "[and]")
+    res = res.replace('*', "[star]")
+    res = res.replace(':', "[colon]")
+    res = res.replace('<', "[langle]")
+    res = res.replace('>', "[rangle]")
+    res = res.replace('?', "[qmark]")
+    res = res.replace('/', "[slash]")
+    res = res.replace('\\', "[rslash]")
+    res = res.replace('{', "[lcurly]")
+    res = res.replace('}', "[rcurly]")
+    res = res.replace('|', "[vbar]")
+    return res
 
 def main():
     if not os.path.exists('./config.ini'):
         print("Please run bootstrap.py first")
         raise FileNotFoundError
+
+    global config
     config = configparser.ConfigParser()
     config.read('./config.ini')
 
-    torrent_id = sys.argv[1]
-    folder_name = sys.argv[2]
-    full_content_path = os.path.join(config['misc']['prefix'], folder_name)
-    backup_path = os.path.join(config['misc']['prefix'], 'backup')
+    category_folder = sys.argv[1]
+    full_content_path = sys.argv[2]
+    folder_name = os.path.basename(full_content_path)
+    if folder_name == "":
+        folder_name = os.path.basename(os.path.dirname(full_content_path))
+    folder_name = escape_name(folder_name)
+    backup_path = os.path.join(config['misc']['prefix'], folder_name)
 
     # Compress folder
     os.makedirs(backup_path, exist_ok=True)
@@ -51,10 +72,14 @@ def main():
     rar_cmd.append('-v' + config['rar']['split']) # Splitted volume
     rar_cmd += ['-m1', '-ma5', '-md128m', '-s']
     rar_cmd.append('-rr' + config['rar']['rr']) # Recovery record percentage
-    rar_cmd.append(os.path.join(backup_path, folder_name + '.rar')) # RAR file path
+    rar_path = os.path.join(backup_path, folder_name + '.rar')
+    rar_cmd.append(rar_path)
     rar_cmd.append(full_content_path)
     
-    execute(rar_cmd)
+    res = execute(rar_cmd, "disk")
+    if res != 0:
+        print(rar_cmd, "returns", res, file=sys.stderr)
+        sys.exit(res)
 
     # par2 verify
     rar_volume_size = get_size(backup_path)
@@ -70,22 +95,41 @@ def main():
     par2_cmd.append('-v')
     par2_cmd.append('-n' + str(par2_volume_count))
     par2_cmd.append(os.path.join(backup_path, folder_name + '.rar.par2'))
-    par2_cmd.append(config['misc']['prefix'] + '/backup/' + folder_name + '.part*.rar')
+    if os.path.exists(rar_path):
+        par2_cmd.append(rar_path)
+    else:
+        par2_cmd.append(os.path.join(backup_path, folder_name + '.part*.rar'))
 
-    execute(par2_cmd)
+    execute(par2_cmd, "disk")
+    if res != 0:
+        print(par2_cmd, "returns", res, file=sys.stderr)
+        sys.exit(res)
 
     # rclone upload
-    raw_folder_cmd = [config['toolchain']['rclone'], 'copy', full_content_path]
-    raw_folder_cmd.append(config['rclone']['raw_account'] + ':/' + torrent_id + '/' + folder_name)
-    raw_folder_cmd += ['-v', '--transfers', '12']
-    
-    execute(raw_folder_cmd)
+    if config['rclone']['raw_account'] != "":
+        raw_folder_cmd = [config['toolchain']['rclone'], 'copy', full_content_path]
+        raw_folder_cmd.append(config['rclone']['raw_account'] + ':/' + category_folder + '/' + folder_name)
+        raw_folder_cmd += ['-v', '--transfers', config['rclone']['threads']]
+        raw_folder_cmd += ['--bwlimit', config['rclone']['bandwidth_limit']]
+        
+        execute(raw_folder_cmd, "network")
+        if res != 0:
+            print(raw_folder_cmd, "returns", res, file=sys.stderr)
+            sys.exit(res)
 
-    backup_cmd = [config['toolchain']['rclone'], 'copy', backup_path]
-    backup_cmd.append(config['rclone']['compress_account'] + ':/' + torrent_id + '/backup')
-    backup_cmd += ['-v', '--transfers', '12']
+    if config['rclone']['compress_account'] != "":
+        backup_cmd = [config['toolchain']['rclone'], 'copy', backup_path]
+        if config['rclone']['raw_account'] == config['rclone']['compress_account']:
+            backup_cmd.append(config['rclone']['compress_account'] + ':/' + category_folder + '/' + folder_name + '/backup')
+        else:
+            backup_cmd.append(config['rclone']['compress_account'] + ':/' + category_folder + '/' + folder_name)
+        backup_cmd += ['-v', '--transfers', config['rclone']['threads']]
+        backup_cmd += ['--bwlimit', config['rclone']['bandwidth_limit']]
 
-    execute(backup_cmd)
+        execute(backup_cmd, "network")
+        if res != 0:
+            print(backup_cmd, "returns", res, file=sys.stderr)
+            sys.exit(res)
 
     full_path_size = get_size(full_content_path) / 1024.0 / 1024 / 1024
     backup_size = get_size(backup_path) / 1024.0 / 1024 / 1024
