@@ -26,7 +26,7 @@ def execute(command, queue=None):
         else:
             print("Warning: unknown queue option '%s' for execute(), run the task immediately." % queue)
     print("Executing:", command)
-    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
     
     return process.returncode
 
