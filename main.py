@@ -88,28 +88,30 @@ def main():
             sys.exit(res)
 
         # par2 verify
-        rar_volume_size = get_size(backup_path)
-        block_count = math.ceil(float(rar_volume_size) / int(config['par2']['block']))
-        backup_block_count = math.ceil(block_count * int(config['par2']['redundancy']) / 100.0)
-        par2_volume_count = math.ceil(backup_block_count / 3.0)
+        if int(config['par2']['redundancy']) > 0:
 
-        par2_cmd = [config['toolchain']['par2'], 'c']
-        par2_cmd.append('-s' + config['par2']['block']) # block size
-        par2_cmd.append('-r' + config['par2']['redundancy']) # redundancy percentage
-        par2_cmd.append('-u')
-        par2_cmd.append('-m' + config['par2']['memory']) # memory limit
-        par2_cmd.append('-v')
-        par2_cmd.append('-n' + str(par2_volume_count))
-        par2_cmd.append(os.path.join(backup_path, folder_name + '.rar.par2'))
-        if os.path.exists(rar_path):
-            par2_cmd.append(rar_path)
-        else:
-            par2_cmd.append(os.path.join(backup_path, folder_name + '.part*.rar'))
+            rar_volume_size = get_size(backup_path)
+            block_count = math.ceil(float(rar_volume_size) / int(config['par2']['block']))
+            backup_block_count = math.ceil(block_count * int(config['par2']['redundancy']) / 100.0)
+            par2_volume_count = math.ceil(backup_block_count / 3.0)
 
-        execute(par2_cmd, "disk")
-        if res != 0:
-            print(par2_cmd, "returns", res, file=sys.stderr)
-            sys.exit(res)
+            par2_cmd = [config['toolchain']['par2'], 'c']
+            par2_cmd.append('-s' + config['par2']['block']) # block size
+            par2_cmd.append('-r' + config['par2']['redundancy']) # redundancy percentage
+            par2_cmd.append('-u')
+            par2_cmd.append('-m' + config['par2']['memory']) # memory limit
+            par2_cmd.append('-v')
+            par2_cmd.append('-n' + str(par2_volume_count))
+            par2_cmd.append(os.path.join(backup_path, folder_name + '.rar.par2'))
+            if os.path.exists(rar_path):
+                par2_cmd.append(rar_path)
+            else:
+                par2_cmd.append(os.path.join(backup_path, folder_name + '.part*.rar'))
+
+            execute(par2_cmd, "disk")
+            if res != 0:
+                print(par2_cmd, "returns", res, file=sys.stderr)
+                sys.exit(res)
 
         backup_size = get_size(backup_path) / 1024.0 / 1024 / 1024
         max_size = max(full_path_size, backup_size)
