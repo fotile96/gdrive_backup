@@ -1,5 +1,5 @@
 # gdrive_backup
-Originally written by qss@U2. Refine behaviors when there are concurrent pack-then-upload tasks.
+Originally written by qss@U2, with slightly different behaviors when there are concurrent tasks.
 
 Automatically backup torrent contents (like U2) to google drive, including raw folder upload and PAR2-verified RAR volume.
 
