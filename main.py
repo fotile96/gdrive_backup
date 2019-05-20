@@ -108,7 +108,7 @@ def main():
             else:
                 par2_cmd.append(os.path.join(backup_path, folder_name + '.part*.rar'))
 
-            execute(par2_cmd, "disk")
+            res = execute(par2_cmd, "disk")
             if res != 0:
                 print(par2_cmd, "returns", res, file=sys.stderr)
                 sys.exit(res)
@@ -124,7 +124,7 @@ def main():
         backup_cmd += ['-v', '--transfers', config['rclone']['threads']]
         backup_cmd += ['--bwlimit', config['rclone']['bandwidth_limit']]
 
-        execute(backup_cmd, "network")
+        res = execute(backup_cmd, "network")
         if res != 0:
             print(backup_cmd, "returns", res, file=sys.stderr)
             sys.exit(res)
@@ -138,7 +138,7 @@ def main():
         raw_folder_cmd += ['-v', '--transfers', config['rclone']['threads']]
         raw_folder_cmd += ['--bwlimit', config['rclone']['bandwidth_limit']]
         
-        execute(raw_folder_cmd, "network")
+        res = execute(raw_folder_cmd, "network")
         if res != 0:
             print(raw_folder_cmd, "returns", res, file=sys.stderr)
             sys.exit(res)
